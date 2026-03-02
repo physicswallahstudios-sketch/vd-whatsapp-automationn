@@ -5,6 +5,7 @@ import time
 import io
 import logging
 import tempfile
+import pytz
 from datetime import datetime
 from typing import List
 import json
@@ -16,14 +17,50 @@ from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-
 SHEET_ID = os.getenv("SHEET_ID")
 SHEET_NAME = "VD Top Batch Day View"
 
-RANGES = [
-    f"{SHEET_NAME}!A38:F54",
-    f"{SHEET_NAME}!L40:Q54",
+utc_now = datetime.now(pytz.utc)
+event_start_date = datetime(2026, 3, 1, tzinfo=pytz.utc)
+day_diff = (utc_now.date() - event_start_date.date()).days
+
+DAY_RANGES = [
+    [ # Day 0 (March 1st)
+        f"{SHEET_NAME}!A5:F20",
+        f"{SHEET_NAME}!L6:Q20",
+    ],
+    [ # Day 1 (March 2nd)
+        f"{SHEET_NAME}!A21:F37",
+        f"{SHEET_NAME}!L23:Q37",
+    ],
+    [ # Day 2 (March 3rd)
+        f"{SHEET_NAME}!A38:F54",
+        f"{SHEET_NAME}!L40:Q54",
+    ],
+    [ # Day 3 (March 4th)
+        f"{SHEET_NAME}!A55:F71",
+        f"{SHEET_NAME}!L57:Q71",
+    ],
+    [ # Day 4
+        f"{SHEET_NAME}!A72:F88",
+        f"{SHEET_NAME}!L74:Q88",
+    ],
+    [ # Day 5
+        f"{SHEET_NAME}!A89:F105",
+        f"{SHEET_NAME}!L91:Q105",
+    ],
+    [ # Day 6
+        f"{SHEET_NAME}!A106:F122",
+        f"{SHEET_NAME}!L123:Q122",
+    ],
+    [ # Day 7
+        f"{SHEET_NAME}!A123:F139",
+        f"{SHEET_NAME}!L125:Q139",
+    ]
 ]
+
+max_day_index = min(max(0, day_diff), 7)
+RANGES = DAY_RANGES[max_day_index]
 
 CLOUD_NAME = os.getenv("CLOUD_NAME")
 UPLOAD_PRESET = os.getenv("UPLOAD_PRESET")
@@ -33,7 +70,7 @@ AISENSY_API_KEY = os.getenv("AISENSY_API_KEY")
 CAMPAIGN_NAME = os.getenv("AISENSY_CAMPAIGN_NAME")
 DESTINATIONS = [d.strip() for d in os.getenv("DESTINATIONS", "").split(",") if d.strip()]
 
-TODAY = datetime.now().strftime("%d %B %Y")
+TODAY = utc_now.strftime("%d %B %Y")
 
 TARGET_SIZE_BYTES = 4 * 1024 * 1024
 JPEG_QUALITIES = [95, 85, 75, 65, 55]
@@ -158,7 +195,7 @@ def export_and_upload_images() -> List[str]:
                     files={"file": f},
                     data={
                         "upload_preset": UPLOAD_PRESET,
-                        "folder": f"BizCat_Exports/{datetime.now().strftime('%Y-%m-%d')}",
+                        "folder": f"BizCat_Exports/{datetime.now(pytz.utc).strftime('%Y-%m-%d')}",
                     },
                     timeout=60,
                 )
@@ -216,7 +253,7 @@ if __name__ == "__main__":
 
     Image.MAX_IMAGE_PIXELS = 300_000_000
 
-    logger.info("automation started")
+    logger.info("automation started for Day %s (UTC date: %s)", max_day_index, datetime.now(pytz.utc).date())
     urls = export_and_upload_images()
     send_via_aisensy(urls)
     logger.info("automation completed successfully")
