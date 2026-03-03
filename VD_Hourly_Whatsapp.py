@@ -21,7 +21,7 @@ SHEET_ID = os.getenv("SHEET_ID")
 SHEET_NAME = "VD Top Batch Day View"
 
 utc_now = datetime.now(pytz.utc)
-event_start_date = datetime(2026, 3, 1, tzinfo=pytz.utc)
+event_start_date = datetime(2026, 2, 28, tzinfo=pytz.utc)
 day_diff = (utc_now.date() - event_start_date.date()).days
 
 DAY_RANGES = [
