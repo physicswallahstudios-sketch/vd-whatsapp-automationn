@@ -51,7 +51,7 @@ DAY_RANGES = [
     ],
     [ # Day 6
         f"{SHEET_NAME}!A106:F122",
-        f"{SHEET_NAME}!L123:Q122",
+        f"{SHEET_NAME}!L108:Q122",
     ],
     [ # Day 7
         f"{SHEET_NAME}!A123:F139",
