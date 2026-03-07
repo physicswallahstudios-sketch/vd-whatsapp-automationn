@@ -56,10 +56,14 @@ DAY_RANGES = [
     [ # Day 7
         f"{SHEET_NAME}!A123:F139",
         f"{SHEET_NAME}!L125:Q139",
+    ],
+    [ # Day 8
+        f"{SHEET_NAME}!A140:F156",
+        f"{SHEET_NAME}!L142:Q156",
     ]
 ]
 
-max_day_index = min(max(0, day_diff), 7)
+max_day_index = min(max(0, day_diff), 8)
 RANGES = DAY_RANGES[max_day_index]
 
 CLOUD_NAME = os.getenv("CLOUD_NAME")
