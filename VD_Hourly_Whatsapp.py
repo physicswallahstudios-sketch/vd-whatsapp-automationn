@@ -25,19 +25,19 @@ event_start_date = datetime(2026, 2, 28, tzinfo=pytz.utc)
 day_diff = (utc_now.date() - event_start_date.date()).days
 
 DAY_RANGES = [
-    [ # Day 0 (March 1st)
+    [ # Day 0
         f"{SHEET_NAME}!A5:F20",
         f"{SHEET_NAME}!L6:Q20",
     ],
-    [ # Day 1 (March 2nd)
+    [ # Day 1
         f"{SHEET_NAME}!A21:F37",
         f"{SHEET_NAME}!L23:Q37",
     ],
-    [ # Day 2 (March 3rd)
+    [ # Day 2
         f"{SHEET_NAME}!A38:F54",
         f"{SHEET_NAME}!L40:Q54",
     ],
-    [ # Day 3 (March 4th)
+    [ # Day 3
         f"{SHEET_NAME}!A55:F71",
         f"{SHEET_NAME}!L57:Q71",
     ],
@@ -64,10 +64,34 @@ DAY_RANGES = [
     [ # Day 9
         f"{SHEET_NAME}!A157:F173",
         f"{SHEET_NAME}!L159:Q173",
+    ],
+    [ # Day 10
+        f"{SHEET_NAME}!A174:F190",
+        f"{SHEET_NAME}!L176:Q190",
+    ],
+    [ # Day 11
+        f"{SHEET_NAME}!A191:F207",
+        f"{SHEET_NAME}!L193:Q207",
+    ],
+    [ # Day 12
+        f"{SHEET_NAME}!A208:F224",
+        f"{SHEET_NAME}!L210:Q224",
+    ],
+    [ # Day 13
+        f"{SHEET_NAME}!A225:F241",
+        f"{SHEET_NAME}!L227:Q241",
+    ],
+    [ # Day 14
+        f"{SHEET_NAME}!A242:F258",
+        f"{SHEET_NAME}!L244:Q258",
+    ],
+    [ # Day 15
+        f"{SHEET_NAME}!A259:F275",
+        f"{SHEET_NAME}!L261:Q275",
     ]
 ]
 
-max_day_index = min(max(0, day_diff), 9)
+max_day_index = min(max(0, day_diff), 15)
 RANGES = DAY_RANGES[max_day_index]
 
 CLOUD_NAME = os.getenv("CLOUD_NAME")
