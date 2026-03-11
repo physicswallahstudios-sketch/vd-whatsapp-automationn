@@ -192,6 +192,8 @@ def export_and_upload_images() -> List[str]:
             f"&bottom_margin=0.25"
             f"&left_margin=0.25"
             f"&right_margin=0.25"
+            f"&fzr=false"
+
         )
 
         logger.info("exporting range %s", sheet_range)
