@@ -187,13 +187,14 @@ def export_and_upload_images() -> List[str]:
             f"&gid={sheet_gid}"
             f"&range={range_only}"
             f"&size=A2"
-            f"&scale=4"
+            f"&scale=5"
             f"&top_margin=0.25"
             f"&bottom_margin=0.25"
             f"&left_margin=0.25"
             f"&right_margin=0.25"
             f"&fzr=false"
-
+            f"&gridlines=false"
+            f"&printtitle=false"
         )
 
         logger.info("exporting range %s", sheet_range)
