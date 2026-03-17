@@ -216,50 +216,45 @@ def get_sheet_layout(creds: Credentials, sheet_name: str):
         logger.error("error fetching sheet layout: %s", str(e))
     return None, None
 
-def export_full_sheet_as_pdf(creds: Credentials, sheet_gid: str) -> bytes:
-    """Exports the entire sheet as PDF using the Drive API export endpoint (more reliable for service accounts)."""
+def export_bounding_box_as_pdf(creds: Credentials, sheet_gid: str, range_str: str) -> bytes:
+    """Exports a specific bounding box as PDF with retries."""
     
-    # Official Drive API export endpoint with Spreadsheet-specific formatting parameters
-    # The parameters are appended to the export query.
-    base_url = f"https://www.googleapis.com/drive/v3/files/{SHEET_ID}/export"
-    params = {
-        "mimeType": "application/pdf",
-        "gid": sheet_gid,
-        "portrait": "false",
-        "size": "A2",
-        "scale": "4",
-        "top_margin": "0",
-        "bottom_margin": "0",
-        "left_margin": "0",
-        "right_margin": "0",
-        "fzr": "false",
-        "gridlines": "false",
-        "printtitle": "false"
-    }
+    # Revert to the docs.google.com URL as it's more flexible with gid and range
+    # but use it with a specific range to avoid 403s on "Full Sheet"
+    export_url = (
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export"
+        f"?format=pdf"
+        f"&portrait=false"
+        f"&gid={sheet_gid}"
+        f"&range={range_str}"
+        f"&size=A3"         
+        f"&scale=2"       
+        f"&top_margin=0.1"
+        f"&bottom_margin=0.1"
+        f"&left_margin=0.1"
+        f"&right_margin=0.1"
+        f"&fzr=false"
+        f"&gridlines=false"
+        f"&printtitle=false"
+    )
 
     backoff = [2, 5, 10]
     for attempt, delay in enumerate(backoff + [0]):
         try:
-            logger.info("exporting PDF via Drive API gid=%s (attempt %d/%d)", sheet_gid, attempt + 1, len(backoff)+1)
+            logger.info("exporting bounding box %s (attempt %d/%d)", range_str, attempt + 1, len(backoff)+1)
             response = requests.get(
-                base_url,
-                params=params,
+                export_url,
                 headers={"Authorization": f"Bearer {creds.token}"},
                 timeout=120,
             )
             
-            # Detailed Error Logging for 403
-            if response.status_code == 403:
-                logger.error("403 Forbidden: Service Account may lack Drive API permissions or the file is too large for full export.")
-                logger.error("Response body: %s", response.text[:500])
-                # If full export is denied, we could try to re-add a large range if absolutely necessary,
-                # but let's first try the Drive API endpoint which usually fixes this.
-            elif response.status_code != 200:
+            # Validation
+            if response.status_code != 200:
                 logger.error("export failed status=%s body=%s", response.status_code, response.text[:500])
             elif "application/pdf" not in response.headers.get("Content-Type", ""):
                 logger.error("export returned non-PDF content-type=%s body=%s", 
                              response.headers.get("Content-Type"), response.text[:500])
-            elif len(response.content) < 1024: # 1KB minimum
+            elif len(response.content) < 1024:
                 logger.error("export response too small: %d bytes", len(response.content))
             else:
                 logger.info("successfully exported PDF: %.2f KB", len(response.content) / 1024)
@@ -275,34 +270,71 @@ def export_full_sheet_as_pdf(creds: Credentials, sheet_gid: str) -> bytes:
             
     return None
 
-def crop_range_from_image(img: Image.Image, range_str: str, col_widths: List[int], row_heights: List[int], dpi: int = 300) -> Image.Image:
-    """Crops a specific range from the full sheet image using pixel metadata."""
-    indices = parse_a1_notation(range_str)
-    if not indices:
-        logger.warning("could not parse range %s", range_str)
+def crop_range_from_image(img: Image.Image, range_str: str, bbox_indices: tuple, col_widths: List[int], row_heights: List[int], dpi: int = 300) -> Image.Image:
+    """Crops a specific range from the bounding box image."""
+    target_indices = parse_a1_notation(range_str)
+    if not target_indices:
+        logger.warning("could not parse target range %s", range_str)
         return img
     
-    start_row, end_row, start_col, end_col = indices
+    # Bounding Box Offset
+    bb_start_row, _, bb_start_col, _ = bbox_indices
+    start_row, end_row, start_col, end_col = target_indices
     
     # Scale factor (Sheets metadata is at 96 DPI, output is at specified DPI)
-    scale = dpi / 96.0
+    # The export scale (e.g. scale=2) is handled by the PDF generator, 
+    # but the metadata is in 'points' (96 per inch).
+    # We need to find the pixel ratio based on the final image size vs metadata calculation.
     
-    # Calculate pixel bounds
-    # Note: Sheet margins are 0 in export_full_sheet_as_pdf
-    left = sum(col_widths[:start_col]) * scale
-    top = sum(row_heights[:start_row]) * scale
-    right = sum(col_widths[:end_col]) * scale
-    bottom = sum(row_heights[:end_row]) * scale
+    # Total width/height of the bounding box in points
+    bb_width_pts = sum(col_widths[bb_start_col:indices_max_col(bbox_indices)])
+    bb_height_pts = sum(row_heights[bb_start_row:indices_max_row(bbox_indices)])
     
-    # Safety: ensure bounds are within image
-    w, h = img.size
-    left = max(0, min(left, w))
-    top = max(0, min(top, h))
-    right = max(left + 1, min(right, w))
-    bottom = max(top + 1, min(bottom, h))
+    img_w, img_h = img.size
+    scale_w = img_w / float(bb_width_pts)
+    scale_h = img_h / float(bb_height_pts)
     
-    logger.info("cropping range %s to box (%.1f, %.1f, %.1f, %.1f)", range_str, left, top, right, bottom)
+    # Calculate pixel bounds relative to the crop
+    # relative_start_col = target_start_col - bb_start_col
+    left = sum(col_widths[bb_start_col:start_col]) * scale_w
+    top = sum(row_heights[bb_start_row:start_row]) * scale_h
+    right = left + sum(col_widths[start_col:end_col]) * scale_w
+    bottom = top + sum(row_heights[start_row:end_row]) * scale_h
+    
+    # Safety
+    left = max(0, min(left, img_w))
+    top = max(0, min(top, img_h))
+    right = max(left + 1, min(right, img_w))
+    bottom = max(top + 1, min(bottom, img_h))
+    
+    logger.info("cropping %s from bounding box at relative (%.1f, %.1f, %.1f, %.1f)", 
+                range_str, left, top, right, bottom)
     return img.crop((int(left), int(top), int(right), int(bottom)))
+
+def indices_max_col(indices): return indices[3]
+def indices_max_row(indices): return indices[1]
+
+def calculate_daily_bounding_box(ranges: List[str]) -> (str, tuple):
+    """Finds the minimal range string that covers all target ranges."""
+    parsed = [parse_a1_notation(r) for r in ranges]
+    parsed = [p for p in parsed if p]
+    if not parsed:
+        return None, None
+    
+    min_row = min(p[0] for p in parsed)
+    max_row = max(p[1] for p in parsed)
+    min_col = min(p[2] for p in parsed)
+    max_col = max(p[3] for p in parsed)
+    
+    def encode_col(n):
+        res = ""
+        while n >= 0:
+            res = chr(n % 26 + ord('A')) + res
+            n = n // 26 - 1
+        return res
+
+    bbox_str = f"{encode_col(min_col)}{min_row+1}:{encode_col(max_col-1)}{max_row}"
+    return bbox_str, (min_row, max_row, min_col, max_col)
 
 def export_and_upload_images() -> List[str]:
     creds_info = json.loads(os.getenv("GOOGLE_CREDENTIALS_JSON"))
@@ -318,6 +350,12 @@ def export_and_upload_images() -> List[str]:
     sheet_gid = get_sheet_gid(creds, SHEET_NAME)
     logger.info("using sheet %s gid=%s", SHEET_NAME, sheet_gid)
     
+    # 0. Calculate Bounding Box
+    bbox_str, bbox_indices = calculate_daily_bounding_box(RANGES)
+    if not bbox_str:
+        logger.error("failed to calculate bounding box for ranges")
+        return []
+
     # 1. Fetch layout metadata
     logger.info("fetching sheet layout metadata...")
     col_widths, row_heights = get_sheet_layout(creds, SHEET_NAME)
@@ -325,24 +363,20 @@ def export_and_upload_images() -> List[str]:
         logger.error("failed to fetch sheet layout, cannot proceed with robust cropping")
         return []
 
-    # 2. Export full sheet as PDF
-    pdf_content = export_full_sheet_as_pdf(creds, sheet_gid)
+    # 2. Export Bounding Box as PDF
+    pdf_content = export_bounding_box_as_pdf(creds, sheet_gid, bbox_str)
     if not pdf_content:
         logger.error("failed to export PDF after all retries")
         return []
 
-    # 3. Convert PDF to full-sheet image
+    # 3. Convert PDF to image
     logger.info("converting PDF to image...")
     try:
-        pages = convert_from_bytes(
-            pdf_content,
-            dpi=300,
-            first_page=1,
-            last_page=1, # Only первого page for now, adjust if multiple pages
-        )
+        pages = convert_from_bytes(pdf_content, dpi=300)
         if not pages:
             logger.error("pdf2image returned no pages")
             return []
+        # In case the bounding box spans multiple pages (unlikely with A3), merge them or check
         full_img = pages[0].convert("RGB")
     except Exception as e:
         logger.critical("pdf2image CRASHED: %s", str(e), exc_info=True)
@@ -350,23 +384,23 @@ def export_and_upload_images() -> List[str]:
 
     uploaded_urls = []
 
-    # 4. Process each range from the full image
+    # 4. Process each range from the bounding box image
     for i, sheet_range in enumerate(RANGES, start=1):
         try:
             logger.info("processing range %d/%d: %s", i, len(RANGES), sheet_range)
             
-            # Crop range from the full image
-            img = crop_range_from_image(full_img, sheet_range, col_widths, row_heights, dpi=300)
+            # Crop range relative to bounding box
+            img = crop_range_from_image(full_img, sheet_range, bbox_indices, col_widths, row_heights, dpi=300)
             
             # Polish and optimize
-            img = ImageEnhance.Sharpness(img).enhance(1.5)
-            img = crop_white_space(img) # Final trim for precision
+            img = ImageEnhance.Sharpness(img).enhance(1.2)
+            img = crop_white_space(img) 
             
             jpg_data = optimize_image(img)
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_table_{i}.jpg") as tmp:
-                tmp.write(jpg_data)
-                filename = tmp.name
+            filename = f"table_{i}.jpg"
+            with open(filename, "wb") as f:
+                f.write(jpg_data)
 
             try:
                 with open(filename, "rb") as f:
@@ -394,7 +428,6 @@ def export_and_upload_images() -> List[str]:
                     os.remove(filename)
         except Exception as e:
             logger.error("failed to process range %s: %s", sheet_range, str(e), exc_info=True)
-            # Continue to next range
 
         time.sleep(1)
 
