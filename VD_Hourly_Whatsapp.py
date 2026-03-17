@@ -29,7 +29,7 @@ DAY_RANGES = [
         f"{SHEET_NAME}!A5:F20",
         f"{SHEET_NAME}!L6:Q20",
     ],
-    [ # Day 1
+    [ # Day 1 - test
         f"{SHEET_NAME}!A21:F37",
         f"{SHEET_NAME}!L23:Q37",
     ],
