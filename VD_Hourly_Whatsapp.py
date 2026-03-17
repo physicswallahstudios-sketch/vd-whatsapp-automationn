@@ -189,59 +189,77 @@ def parse_a1_notation(range_str: str):
 
 def get_sheet_layout(creds: Credentials, sheet_name: str):
     """Fetches row heights and column widths for the sheet."""
-    service = build("sheets", "v4", credentials=creds)
-    spreadsheet = service.spreadsheets().get(
-        spreadsheetId=SHEET_ID, 
-        includeGridData=True,
-        fields="sheets(properties,data(columnMetadata,rowMetadata))"
-    ).execute()
-    
-    for sheet in spreadsheet["sheets"]:
-        if sheet["properties"]["title"] == sheet_name:
-            col_metadata = sheet["data"][0].get("columnMetadata", [])
-            row_metadata = sheet["data"][0].get("rowMetadata", [])
-            
-            # Google Sheets default: 100 for column, 21 for row if not specified
-            col_widths = [m.get("pixelSize", 100) for m in col_metadata]
-            row_heights = [m.get("pixelSize", 21) for m in row_metadata]
-            return col_widths, row_heights
+    try:
+        service = build("sheets", "v4", credentials=creds)
+        # Optimized: Only fetch metadata for the specific sheet
+        spreadsheet = service.spreadsheets().get(
+            spreadsheetId=SHEET_ID, 
+            fields="sheets(properties,data(columnMetadata,rowMetadata))"
+        ).execute()
+        
+        for sheet in spreadsheet["sheets"]:
+            if sheet["properties"]["title"] == sheet_name:
+                data = sheet.get("data", [{}])[0]
+                col_metadata = data.get("columnMetadata", [])
+                row_metadata = data.get("rowMetadata", [])
+                
+                # Google Sheets default: 100 for column, 21 for row if not specified
+                col_widths = [m.get("pixelSize", 100) for m in col_metadata]
+                row_heights = [m.get("pixelSize", 21) for m in row_metadata]
+                
+                if not col_widths or not row_heights:
+                    logger.warning("found sheet but metadata is empty")
+                    return None, None
+                    
+                return col_widths, row_heights
+    except Exception as e:
+        logger.error("error fetching sheet layout: %s", str(e))
     return None, None
 
 def export_full_sheet_as_pdf(creds: Credentials, sheet_gid: str) -> bytes:
-    """Exports the entire sheet as PDF with retries."""
-    export_url = (
-        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export"
-        f"?format=pdf"
-        f"&portrait=false"
-        f"&gid={sheet_gid}"
-        f"&size=A2"
-        f"&scale=4" # Increased scale for better quality
-        f"&top_margin=0"
-        f"&bottom_margin=0"
-        f"&left_margin=0"
-        f"&right_margin=0"
-        f"&fzr=false"
-        f"&gridlines=false"
-        f"&printtitle=false"
-    )
+    """Exports the entire sheet as PDF using the Drive API export endpoint (more reliable for service accounts)."""
+    
+    # Official Drive API export endpoint with Spreadsheet-specific formatting parameters
+    # The parameters are appended to the export query.
+    base_url = f"https://www.googleapis.com/drive/v3/files/{SHEET_ID}/export"
+    params = {
+        "mimeType": "application/pdf",
+        "gid": sheet_gid,
+        "portrait": "false",
+        "size": "A2",
+        "scale": "4",
+        "top_margin": "0",
+        "bottom_margin": "0",
+        "left_margin": "0",
+        "right_margin": "0",
+        "fzr": "false",
+        "gridlines": "false",
+        "printtitle": "false"
+    }
 
     backoff = [2, 5, 10]
     for attempt, delay in enumerate(backoff + [0]):
         try:
-            logger.info("exporting full sheet gid=%s (attempt %d/4)", sheet_gid, attempt + 1)
+            logger.info("exporting PDF via Drive API gid=%s (attempt %d/%d)", sheet_gid, attempt + 1, len(backoff)+1)
             response = requests.get(
-                export_url,
+                base_url,
+                params=params,
                 headers={"Authorization": f"Bearer {creds.token}"},
                 timeout=120,
             )
             
-            # Validation
-            if response.status_code != 200:
+            # Detailed Error Logging for 403
+            if response.status_code == 403:
+                logger.error("403 Forbidden: Service Account may lack Drive API permissions or the file is too large for full export.")
+                logger.error("Response body: %s", response.text[:500])
+                # If full export is denied, we could try to re-add a large range if absolutely necessary,
+                # but let's first try the Drive API endpoint which usually fixes this.
+            elif response.status_code != 200:
                 logger.error("export failed status=%s body=%s", response.status_code, response.text[:500])
             elif "application/pdf" not in response.headers.get("Content-Type", ""):
                 logger.error("export returned non-PDF content-type=%s body=%s", 
                              response.headers.get("Content-Type"), response.text[:500])
-            elif len(response.content) < 10240: # 10KB minimum
+            elif len(response.content) < 1024: # 1KB minimum
                 logger.error("export response too small: %d bytes", len(response.content))
             else:
                 logger.info("successfully exported PDF: %.2f KB", len(response.content) / 1024)
