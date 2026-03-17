@@ -13,9 +13,11 @@ import json
 import requests
 from PIL import Image, ImageEnhance, ImageChops
 from pdf2image import convert_from_bytes
+import google.auth
 from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+import re
 
 SHEET_ID = os.getenv("SHEET_ID")
 SHEET_NAME = "VD Top Batch Day View 16th Mar Onwards"
@@ -160,9 +162,132 @@ def crop_white_space(img: Image.Image) -> Image.Image:
     bbox = diff.getbbox()
     return img.crop(bbox) if bbox else img
 
+def parse_a1_notation(range_str: str):
+    """Parses A1 notation like 'A5:F20' into grid indices."""
+    parts = range_str.split("!")[-1].split(":")
+    if len(parts) != 2:
+        return None
+    
+    def decode_col(col_str):
+        col = 0
+        for char in col_str:
+            col = col * 26 + (ord(char.upper()) - ord('A') + 1)
+        return col - 1
+
+    match_start = re.match(r"([A-Za-z]+)([0-9]+)", parts[0])
+    match_end = re.match(r"([A-Za-z]+)([0-9]+)", parts[1])
+    
+    if not match_start or not match_end:
+        return None
+        
+    start_col = decode_col(match_start.group(1))
+    start_row = int(match_start.group(2)) - 1
+    end_col = decode_col(match_end.group(1))
+    end_row = int(match_end.group(2))
+    
+    return start_row, end_row, start_col, end_col
+
+def get_sheet_layout(creds: Credentials, sheet_name: str):
+    """Fetches row heights and column widths for the sheet."""
+    service = build("sheets", "v4", credentials=creds)
+    spreadsheet = service.spreadsheets().get(
+        spreadsheetId=SHEET_ID, 
+        includeGridData=True,
+        fields="sheets(properties,data(columnMetadata,rowMetadata))"
+    ).execute()
+    
+    for sheet in spreadsheet["sheets"]:
+        if sheet["properties"]["title"] == sheet_name:
+            col_metadata = sheet["data"][0].get("columnMetadata", [])
+            row_metadata = sheet["data"][0].get("rowMetadata", [])
+            
+            # Google Sheets default: 100 for column, 21 for row if not specified
+            col_widths = [m.get("pixelSize", 100) for m in col_metadata]
+            row_heights = [m.get("pixelSize", 21) for m in row_metadata]
+            return col_widths, row_heights
+    return None, None
+
+def export_full_sheet_as_pdf(creds: Credentials, sheet_gid: str) -> bytes:
+    """Exports the entire sheet as PDF with retries."""
+    export_url = (
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export"
+        f"?format=pdf"
+        f"&portrait=false"
+        f"&gid={sheet_gid}"
+        f"&size=A2"
+        f"&scale=4" # Increased scale for better quality
+        f"&top_margin=0"
+        f"&bottom_margin=0"
+        f"&left_margin=0"
+        f"&right_margin=0"
+        f"&fzr=false"
+        f"&gridlines=false"
+        f"&printtitle=false"
+    )
+
+    backoff = [2, 5, 10]
+    for attempt, delay in enumerate(backoff + [0]):
+        try:
+            logger.info("exporting full sheet gid=%s (attempt %d/4)", sheet_gid, attempt + 1)
+            response = requests.get(
+                export_url,
+                headers={"Authorization": f"Bearer {creds.token}"},
+                timeout=120,
+            )
+            
+            # Validation
+            if response.status_code != 200:
+                logger.error("export failed status=%s body=%s", response.status_code, response.text[:500])
+            elif "application/pdf" not in response.headers.get("Content-Type", ""):
+                logger.error("export returned non-PDF content-type=%s body=%s", 
+                             response.headers.get("Content-Type"), response.text[:500])
+            elif len(response.content) < 10240: # 10KB minimum
+                logger.error("export response too small: %d bytes", len(response.content))
+            else:
+                logger.info("successfully exported PDF: %.2f KB", len(response.content) / 1024)
+                return response.content
+
+        except Exception as e:
+            logger.error("export request error: %s", str(e))
+
+        if delay:
+            logger.info("retrying in %ds...", delay)
+            time.sleep(delay)
+            refresh_creds(creds)
+            
+    return None
+
+def crop_range_from_image(img: Image.Image, range_str: str, col_widths: List[int], row_heights: List[int], dpi: int = 300) -> Image.Image:
+    """Crops a specific range from the full sheet image using pixel metadata."""
+    indices = parse_a1_notation(range_str)
+    if not indices:
+        logger.warning("could not parse range %s", range_str)
+        return img
+    
+    start_row, end_row, start_col, end_col = indices
+    
+    # Scale factor (Sheets metadata is at 96 DPI, output is at specified DPI)
+    scale = dpi / 96.0
+    
+    # Calculate pixel bounds
+    # Note: Sheet margins are 0 in export_full_sheet_as_pdf
+    left = sum(col_widths[:start_col]) * scale
+    top = sum(row_heights[:start_row]) * scale
+    right = sum(col_widths[:end_col]) * scale
+    bottom = sum(row_heights[:end_row]) * scale
+    
+    # Safety: ensure bounds are within image
+    w, h = img.size
+    left = max(0, min(left, w))
+    top = max(0, min(top, h))
+    right = max(left + 1, min(right, w))
+    bottom = max(top + 1, min(bottom, h))
+    
+    logger.info("cropping range %s to box (%.1f, %.1f, %.1f, %.1f)", range_str, left, top, right, bottom)
+    return img.crop((int(left), int(top), int(right), int(bottom)))
+
 def export_and_upload_images() -> List[str]:
     creds_info = json.loads(os.getenv("GOOGLE_CREDENTIALS_JSON"))
-
     creds = Credentials.from_service_account_info(
         creds_info,
         scopes=[
@@ -174,76 +299,86 @@ def export_and_upload_images() -> List[str]:
     refresh_creds(creds)
     sheet_gid = get_sheet_gid(creds, SHEET_NAME)
     logger.info("using sheet %s gid=%s", SHEET_NAME, sheet_gid)
+    
+    # 1. Fetch layout metadata
+    logger.info("fetching sheet layout metadata...")
+    col_widths, row_heights = get_sheet_layout(creds, SHEET_NAME)
+    if not col_widths or not row_heights:
+        logger.error("failed to fetch sheet layout, cannot proceed with robust cropping")
+        return []
+
+    # 2. Export full sheet as PDF
+    pdf_content = export_full_sheet_as_pdf(creds, sheet_gid)
+    if not pdf_content:
+        logger.error("failed to export PDF after all retries")
+        return []
+
+    # 3. Convert PDF to full-sheet image
+    logger.info("converting PDF to image...")
+    try:
+        pages = convert_from_bytes(
+            pdf_content,
+            dpi=300,
+            first_page=1,
+            last_page=1, # Only первого page for now, adjust if multiple pages
+        )
+        if not pages:
+            logger.error("pdf2image returned no pages")
+            return []
+        full_img = pages[0].convert("RGB")
+    except Exception as e:
+        logger.critical("pdf2image CRASHED: %s", str(e), exc_info=True)
+        return []
 
     uploaded_urls = []
 
+    # 4. Process each range from the full image
     for i, sheet_range in enumerate(RANGES, start=1):
-        range_only = sheet_range.split("!")[1]
-
-        export_url = (
-            f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export"
-            f"?format=pdf"
-            f"&portrait=false"
-            f"&gid={sheet_gid}"
-            f"&range={range_only}"
-            f"&size=A2"
-            f"&scale=5"
-            f"&top_margin=0.25"
-            f"&bottom_margin=0.25"
-            f"&left_margin=0.25"
-            f"&right_margin=0.25"
-            f"&fzr=false"
-            f"&gridlines=false"
-            f"&printtitle=false"
-        )
-
-        logger.info("exporting range %s", sheet_range)
-
-        response = requests.get(
-            export_url,
-            headers={"Authorization": f"Bearer {creds.token}"},
-            timeout=90,
-        )
-        response.raise_for_status()
-
-        pages = convert_from_bytes(
-            response.content,
-            dpi=300,
-            first_page=1,
-            last_page=1,
-        )
-
-        img = pages[0].convert("RGB")
-        img = ImageEnhance.Sharpness(img).enhance(2.0)
-        img = crop_white_space(img)
-
-        jpg_data = optimize_image(img)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_table_{i}.jpg") as tmp:
-            tmp.write(jpg_data)
-            filename = tmp.name
-
         try:
-            with open(filename, "rb") as f:
-                upload = requests.post(
-                    UPLOAD_URL,
-                    files={"file": f},
-                    data={
-                        "upload_preset": UPLOAD_PRESET,
-                        "folder": f"BizCat_Exports/{datetime.now(pytz.utc).strftime('%Y-%m-%d')}",
-                    },
-                    timeout=60,
-                )
-                upload.raise_for_status()
+            logger.info("processing range %d/%d: %s", i, len(RANGES), sheet_range)
+            
+            # Crop range from the full image
+            img = crop_range_from_image(full_img, sheet_range, col_widths, row_heights, dpi=300)
+            
+            # Polish and optimize
+            img = ImageEnhance.Sharpness(img).enhance(1.5)
+            img = crop_white_space(img) # Final trim for precision
+            
+            jpg_data = optimize_image(img)
 
-            url = upload.json().get("secure_url")
-            if url:
-                uploaded_urls.append(url)
-                logger.info("uploaded %s", url)
-        finally:
-            os.remove(filename)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_table_{i}.jpg") as tmp:
+                tmp.write(jpg_data)
+                filename = tmp.name
 
-        time.sleep(2)
+            try:
+                with open(filename, "rb") as f:
+                    upload = requests.post(
+                        UPLOAD_URL,
+                        files={"file": f},
+                        data={
+                            "upload_preset": UPLOAD_PRESET,
+                            "folder": f"BizCat_Exports/{datetime.now(pytz.utc).strftime('%Y-%m-%d')}",
+                        },
+                        timeout=90,
+                    )
+                    if upload.status_code != 200:
+                        logger.error("Cloudinary upload failed for range %s: %s", sheet_range, upload.text)
+                        continue
+                        
+                url = upload.json().get("secure_url")
+                if url:
+                    uploaded_urls.append(url)
+                    logger.info("uploaded %s", url)
+            except Exception as e:
+                logger.error("error during upload of range %s: %s", sheet_range, str(e))
+            finally:
+                if os.path.exists(filename):
+                    os.remove(filename)
+        except Exception as e:
+            logger.error("failed to process range %s: %s", sheet_range, str(e), exc_info=True)
+            # Continue to next range
+
+        time.sleep(1)
 
     return uploaded_urls
 
@@ -264,12 +399,20 @@ def send_via_aisensy(urls: List[str]):
                 "media": {"url": url, "filename": f"table_{i}.jpg"},
             }
 
-            r = requests.post(
-                "https://backend.aisensy.com/campaign/t1/api",
-                json=payload,
-                timeout=30,
-            )
-            logger.info("sent to %s image %s status %s", dest, i, r.status_code)
+            try:
+                r = requests.post(
+                    "https://backend.aisensy.com/campaign/t1/api",
+                    json=payload,
+                    timeout=30,
+                )
+                if r.status_code == 200:
+                    logger.info("sent to %s image %s status 200", dest, i)
+                else:
+                    logger.error("failed to send to %s image %s status %d body %s", 
+                                 dest, i, r.status_code, r.text)
+            except Exception as e:
+                logger.error("error sending to aisensy: %s", str(e))
+            
             time.sleep(5)
 
 if __name__ == "__main__":
@@ -288,7 +431,11 @@ if __name__ == "__main__":
 
     Image.MAX_IMAGE_PIXELS = 300_000_000
 
-    logger.info("automation started for Day %s (UTC date: %s)", max_day_index, datetime.now(pytz.utc).date())
-    urls = export_and_upload_images()
-    send_via_aisensy(urls)
-    logger.info("automation completed successfully")
+    try:
+        logger.info("automation started for Day %s (UTC date: %s)", max_day_index, datetime.now(pytz.utc).date())
+        urls = export_and_upload_images()
+        send_via_aisensy(urls)
+        logger.info("automation completed")
+    except Exception as e:
+        logger.critical("FATAL ERROR in main loop: %s", str(e), exc_info=True)
+        # We catch everything to prevent container crash, but exit normally
