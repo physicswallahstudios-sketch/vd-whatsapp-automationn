@@ -22,10 +22,10 @@ from googleapiclient.discovery import build
 # ENV VARIABLES
 # =========================
 SHEET_ID = os.getenv("SHEET_ID")
-SHEET_NAME = "VD Top Batch Day View 16th Mar Onwards"
+SHEET_NAME = "VD Top Batch Day View 1st April Onwards"
 
 utc_now = datetime.now(pytz.utc)
-event_start_date = datetime(2026, 3, 16, tzinfo=pytz.utc)
+event_start_date = datetime(2026, 4, 1, tzinfo=pytz.utc)
 day_diff = (utc_now.date() - event_start_date.date()).days
 
 # =========================
