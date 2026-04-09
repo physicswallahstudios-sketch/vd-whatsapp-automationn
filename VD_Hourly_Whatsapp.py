@@ -32,22 +32,22 @@ SCHEDULE_SLOTS = ["11:30", "15:30", "18:30", "00:30", "08:30"]
 # SHEET RANGES
 # =========================
 DAY_RANGES = [
-    [f"{SHEET_NAME}!A5:F20", f"{SHEET_NAME}!J6:O20"],     # Day 0
-    [f"{SHEET_NAME}!A21:F37", f"{SHEET_NAME}!J23:O37"],   # Day 1
-    [f"{SHEET_NAME}!A38:F54", f"{SHEET_NAME}!J40:O54"],   # Day 2
-    [f"{SHEET_NAME}!A55:F71", f"{SHEET_NAME}!J57:O71"],   # Day 3
-    [f"{SHEET_NAME}!A72:F88", f"{SHEET_NAME}!J74:O88"],   # Day 4
-    [f"{SHEET_NAME}!A89:F105", f"{SHEET_NAME}!J91:O105"], # Day 5
-    [f"{SHEET_NAME}!A106:F122", f"{SHEET_NAME}!J108:O122"], # Day 6
-    [f"{SHEET_NAME}!A123:F139", f"{SHEET_NAME}!J125:O139"], # Day 7
-    [f"{SHEET_NAME}!A140:F156", f"{SHEET_NAME}!J142:O156"], # Day 8
-    [f"{SHEET_NAME}!A157:F173", f"{SHEET_NAME}!J159:O173"], # Day 9
-    [f"{SHEET_NAME}!A174:F190", f"{SHEET_NAME}!J176:O190"], # Day 10
-    [f"{SHEET_NAME}!A191:F207", f"{SHEET_NAME}!J193:O207"], # Day 11
-    [f"{SHEET_NAME}!A208:F224", f"{SHEET_NAME}!J210:O224"], # Day 12
-    [f"{SHEET_NAME}!A225:F241", f"{SHEET_NAME}!J227:O241"], # Day 13
-    [f"{SHEET_NAME}!A242:F258", f"{SHEET_NAME}!J244:O258"], # Day 14
-    [f"{SHEET_NAME}!A259:F275", f"{SHEET_NAME}!J261:O275"], # Day 15
+    [f"{SHEET_NAME}!A5:F20", f"{SHEET_NAME}!K6:R20"],     # Day 0
+    [f"{SHEET_NAME}!A21:F37", f"{SHEET_NAME}!K23:R37"],   # Day 1
+    [f"{SHEET_NAME}!A38:F54", f"{SHEET_NAME}!K40:R54"],   # Day 2
+    [f"{SHEET_NAME}!A55:F71", f"{SHEET_NAME}!K57:R71"],   # Day 3
+    [f"{SHEET_NAME}!A72:F88", f"{SHEET_NAME}!K74:R88"],   # Day 4
+    [f"{SHEET_NAME}!A89:F105", f"{SHEET_NAME}!K91:R105"], # Day 5
+    [f"{SHEET_NAME}!A106:F122", f"{SHEET_NAME}!K108:R122"], # Day 6
+    [f"{SHEET_NAME}!A123:F139", f"{SHEET_NAME}!K125:R139"], # Day 7
+    [f"{SHEET_NAME}!A140:F156", f"{SHEET_NAME}!K142:R156"], # Day 8
+    [f"{SHEET_NAME}!A157:F173", f"{SHEET_NAME}!K159:R173"], # Day 9
+    [f"{SHEET_NAME}!A174:F190", f"{SHEET_NAME}!K176:R190"], # Day 10
+    [f"{SHEET_NAME}!A191:F207", f"{SHEET_NAME}!K193:R207"], # Day 11
+    [f"{SHEET_NAME}!A208:F224", f"{SHEET_NAME}!K210:R224"], # Day 12
+    [f"{SHEET_NAME}!A225:F241", f"{SHEET_NAME}!K227:R241"], # Day 13
+    [f"{SHEET_NAME}!A242:F258", f"{SHEET_NAME}!K244:R258"], # Day 14
+    [f"{SHEET_NAME}!A259:F275", f"{SHEET_NAME}!K261:R275"], # Day 15
 ]
 
 def get_current_ranges():
