@@ -32,22 +32,22 @@ day_diff = (utc_now.date() - event_start_date.date()).days
 # SHEET RANGES
 # =========================
 DAY_RANGES = [
-    [f"{SHEET_NAME}!A5:F20", f"{SHEET_NAME}!L6:Q20"],     # Day 0
-    [f"{SHEET_NAME}!A21:F37", f"{SHEET_NAME}!L23:Q37"],   # Day 1
-    [f"{SHEET_NAME}!A38:F54", f"{SHEET_NAME}!L40:Q54"],   # Day 2
-    [f"{SHEET_NAME}!A55:F71", f"{SHEET_NAME}!L57:Q71"],   # Day 3
-    [f"{SHEET_NAME}!A72:F88", f"{SHEET_NAME}!L74:Q88"],   # Day 4
-    [f"{SHEET_NAME}!A89:F105", f"{SHEET_NAME}!L91:Q105"], # Day 5
-    [f"{SHEET_NAME}!A106:F122", f"{SHEET_NAME}!L108:Q122"], # Day 6
-    [f"{SHEET_NAME}!A123:F139", f"{SHEET_NAME}!L125:Q139"], # Day 7
-    [f"{SHEET_NAME}!A140:F156", f"{SHEET_NAME}!L142:Q156"], # Day 8
-    [f"{SHEET_NAME}!A157:F173", f"{SHEET_NAME}!L159:Q173"], # Day 9
-    [f"{SHEET_NAME}!A174:F190", f"{SHEET_NAME}!L176:Q190"], # Day 10
-    [f"{SHEET_NAME}!A191:F207", f"{SHEET_NAME}!L193:Q207"], # Day 11
-    [f"{SHEET_NAME}!A208:F224", f"{SHEET_NAME}!L210:Q224"], # Day 12
-    [f"{SHEET_NAME}!A225:F241", f"{SHEET_NAME}!L227:Q241"], # Day 13
-    [f"{SHEET_NAME}!A242:F258", f"{SHEET_NAME}!L244:Q258"], # Day 14
-    [f"{SHEET_NAME}!A259:F275", f"{SHEET_NAME}!L261:Q275"], # Day 15
+    [f"{SHEET_NAME}!A5:F20", f"{SHEET_NAME}!J6:O20"],     # Day 0
+    [f"{SHEET_NAME}!A21:F37", f"{SHEET_NAME}!J23:O37"],   # Day 1
+    [f"{SHEET_NAME}!A38:F54", f"{SHEET_NAME}!J40:O54"],   # Day 2
+    [f"{SHEET_NAME}!A55:F71", f"{SHEET_NAME}!J57:O71"],   # Day 3
+    [f"{SHEET_NAME}!A72:F88", f"{SHEET_NAME}!J74:O88"],   # Day 4
+    [f"{SHEET_NAME}!A89:F105", f"{SHEET_NAME}!J91:O105"], # Day 5
+    [f"{SHEET_NAME}!A106:F122", f"{SHEET_NAME}!J108:O122"], # Day 6
+    [f"{SHEET_NAME}!A123:F139", f"{SHEET_NAME}!J125:O139"], # Day 7
+    [f"{SHEET_NAME}!A140:F156", f"{SHEET_NAME}!J142:O156"], # Day 8
+    [f"{SHEET_NAME}!A157:F173", f"{SHEET_NAME}!J159:O173"], # Day 9
+    [f"{SHEET_NAME}!A174:F190", f"{SHEET_NAME}!J176:O190"], # Day 10
+    [f"{SHEET_NAME}!A191:F207", f"{SHEET_NAME}!J193:O207"], # Day 11
+    [f"{SHEET_NAME}!A208:F224", f"{SHEET_NAME}!J210:O224"], # Day 12
+    [f"{SHEET_NAME}!A225:F241", f"{SHEET_NAME}!J227:O241"], # Day 13
+    [f"{SHEET_NAME}!A242:F258", f"{SHEET_NAME}!J244:O258"], # Day 14
+    [f"{SHEET_NAME}!A259:F275", f"{SHEET_NAME}!J261:O275"], # Day 15
 ]
 
 max_day_index = min(max(0, day_diff), 15)
