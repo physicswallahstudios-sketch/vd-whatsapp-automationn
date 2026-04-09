@@ -6,7 +6,7 @@ import io
 import logging
 import tempfile
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 import json
 
@@ -24,9 +24,9 @@ from googleapiclient.discovery import build
 SHEET_ID = os.getenv("SHEET_ID")
 SHEET_NAME = "VD Top Batch Day View 1st April Onwards"
 
-utc_now = datetime.now(pytz.utc)
-event_start_date = datetime(2026, 4, 1, tzinfo=pytz.utc)
-day_diff = (utc_now.date() - event_start_date.date()).days
+IST = pytz.timezone("Asia/Kolkata")
+EVENT_START_DATE = datetime(2026, 4, 1, tzinfo=IST).date()
+SCHEDULE_SLOTS = ["11:30", "15:30", "18:30", "00:30", "08:30"]
 
 # =========================
 # SHEET RANGES
@@ -50,8 +50,21 @@ DAY_RANGES = [
     [f"{SHEET_NAME}!A259:F275", f"{SHEET_NAME}!J261:O275"], # Day 15
 ]
 
-max_day_index = min(max(0, day_diff), 15)
-RANGES = DAY_RANGES[max_day_index]
+def get_current_ranges():
+    now_ist = datetime.now(IST)
+    
+    # Rollover logic: Before 10:00 AM IST, still consider it the previous reporting day
+    cutoff_today = now_ist.replace(hour=10, minute=00, second=0, microsecond=0)
+    if now_ist < cutoff_today:
+        effective_date = (now_ist - timedelta(days=1)).date()
+    else:
+        effective_date = now_ist.date()
+        
+    day_diff = (effective_date - EVENT_START_DATE).days
+    day_index = min(max(0, day_diff), 15)
+    
+    logger.info("Reporting Day Index: %s (Effective Date: %s)", day_index, effective_date)
+    return DAY_RANGES[day_index]
 
 # =========================
 # CLOUDINARY
@@ -69,7 +82,7 @@ DESTINATIONS = [
     d.strip() for d in os.getenv("DESTINATIONS", "").split(",") if d.strip()
 ]
 
-TODAY = utc_now.strftime("%d %B %Y")
+# TODAY string will be generated inside the loop
 
 # =========================
 # IMAGE SETTINGS
@@ -168,7 +181,8 @@ def export_and_upload_images() -> List[str]:
 
     uploaded_urls = []
 
-    for i, sheet_range in enumerate(RANGES, start=1):
+    ranges = get_current_ranges()
+    for i, sheet_range in enumerate(ranges, start=1):
         range_only = sheet_range.split("!")[1]
 
         export_url = (
@@ -247,7 +261,7 @@ def send_via_aisensy(urls: List[str]):
                 "campaignName": CAMPAIGN_NAME,
                 "destination": dest,
                 "userName": "PW Online- Analytics",
-                "templateParams": [TODAY],
+                "templateParams": [datetime.now(IST).strftime("%d %B %Y")],
                 "source": "automation-script",
                 "media": {
                     "url": url,
@@ -283,13 +297,14 @@ if __name__ == "__main__":
 
     Image.MAX_IMAGE_PIXELS = 300_000_000
 
-    logger.info(
-        "automation started for Day %s (UTC date: %s)",
-        max_day_index,
-        datetime.now(pytz.utc).date()
-    )
-
-    urls = export_and_upload_images()
-    send_via_aisensy(urls)
-
-    logger.info("automation completed successfully")
+    logger.info("Automation run started (IST time: %s)", datetime.now(IST).strftime("%Y-%m-%d %H:%M"))
+    
+    try:
+        urls = export_and_upload_images()
+        send_via_aisensy(urls)
+        logger.info("Automation run completed successfully")
+    except Exception as e:
+        logger.error("Error during automation run: %s", e, exc_info=True)
+        # We might want to exit with non-zero if it's a cron job for monitoring
+        import sys
+        sys.exit(1)
