@@ -152,7 +152,8 @@ def crop_white_space(img: Image.Image) -> Image.Image:
 # =========================
 def export_and_upload_images() -> List[str]:
     creds_info = json.loads(os.getenv("GOOGLE_CREDENTIALS_JSON"))
-
+    if "private_key" in creds_info:
+        creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(
         creds_info,
         scopes=[
