@@ -75,7 +75,7 @@ def get_current_ranges():
         effective_date = now_ist.date()
         
     day_diff = (effective_date - EVENT_START_DATE).days
-    day_index = min(max(0, day_diff), 15)
+    day_index = min(max(0, day_diff), 30)
     
     logger.info("Reporting Day Index: %s (Effective Date: %s)", day_index, effective_date)
     return DAY_RANGES[day_index]
